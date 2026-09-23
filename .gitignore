@@ -2,3 +2,11 @@ data/
 output/
 checkpoints/
 logs/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Python package generated metadata
+**/*.egg-info/
