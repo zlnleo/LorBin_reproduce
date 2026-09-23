@@ -13,8 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # 3. 安装conda相关的内容
+ARG MINICONDA_VERSION=py310_23.11.0-2
+ARG MINICONDA_SHA256=35a58b8961e1187e7311b979968662c6223e86e1451191bed2e67a72b6bd0658
 RUN wget -O /tmp/miniconda.sh \
-    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Linux-x86_64.sh \
+    && echo "${MINICONDA_SHA256}  /tmp/miniconda.sh" | sha256sum -c - \
     && bash /tmp/miniconda.sh -b -p /opt/conda \
     && rm /tmp/miniconda.sh
 #设置conda的环境变量,以便在后续的命令中可以直接使用conda命令
@@ -37,7 +40,10 @@ RUN conda install -y -n lorbin_env -c pytorch \
     pytorch=1.11.0 \
     torchvision=0.12.0 \
     torchaudio=0.11.0 \
-    cpuonly
+    cpuonly 
+# 兼容旧版 PyTorch，避免 MKL 2024.1+ 导致 iJIT_NotifyEvent 错误
+RUN conda install -y -n lorbin_env -c conda-forge \
+    "mkl<2024.1"
 #安装其他python modules
 RUN conda run -n lorbin_env python -m pip install \
     numpy==1.23.3 \
@@ -51,6 +57,7 @@ RUN conda run -n lorbin_env \
     python -m pip install /tmp/lorbin-0.1.0.tar.gz
 ENV PATH="/opt/conda/envs/lorbin_env/bin:/opt/conda/bin:$PATH"
 RUN python --version \
+    && python -c "import torch; print('PyTorch:', torch.__version__)" \
     && LorBin --help \
     && samtools --version \
     && minimap2 --version
