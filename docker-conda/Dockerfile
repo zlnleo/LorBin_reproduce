@@ -22,30 +22,34 @@ RUN wget -O /tmp/miniconda.sh \
     && rm /tmp/miniconda.sh
 #设置conda的环境变量,以便在后续的命令中可以直接使用conda命令
 ENV PATH="/opt/conda/bin:$PATH"
-#构建LorBin相关的conda环境,并且安装相关的依赖包
+# 1. 创建 LorBin 基础环境
 RUN conda create -y -n lorbin_env \
     python=3.10 \
     pip=22.2.2 \
-    setuptools=65.5.0 
-# 安装 Bioconda 相关依赖和序列处理工具
+    setuptools=65.5.0 \
+    && conda clean -afy
+# 2. 安装 Bioconda 生物信息工具
 RUN conda install -y -n lorbin_env -c bioconda \
     biopython=1.78 \
     hmmer \
     prodigal \
     bedtools \
     samtools \
-    minimap2 
-#安装cpu pytorch
-RUN conda install -y -n lorbin_env -c pytorch \
+    minimap2 \
+    && conda clean -afy
+# 3. 安装 CPU PyTorch，并限制 MKL 版本
+RUN conda install -y -n lorbin_env \
+    -c pytorch \
+    -c conda-forge \
     pytorch=1.11.0 \
     torchvision=0.12.0 \
     torchaudio=0.11.0 \
-    cpuonly 
-# 兼容旧版 PyTorch，避免 MKL 2024.1+ 导致 iJIT_NotifyEvent 错误
-RUN conda install -y -n lorbin_env -c conda-forge \
-    "mkl<2024.1"
+    cpuonly \
+    "mkl<2024.1" \
+    && conda clean -afy
 #安装其他python modules
 RUN conda run -n lorbin_env python -m pip install \
+    --no-cache-dir \
     numpy==1.23.3 \
     scikit-learn==1.1.2 \
     scipy==1.13.1 \
@@ -53,8 +57,9 @@ RUN conda run -n lorbin_env python -m pip install \
     joblib==1.4.2
 
 COPY LorBin/dist/lorbin-0.1.0.tar.gz /tmp/lorbin-0.1.0.tar.gz
-RUN conda run -n lorbin_env \
-    python -m pip install /tmp/lorbin-0.1.0.tar.gz
+RUN conda run -n lorbin_env python -m pip install \
+    --no-cache-dir \
+    /tmp/lorbin-0.1.0.tar.gz
 ENV PATH="/opt/conda/envs/lorbin_env/bin:/opt/conda/bin:$PATH"
 RUN python --version \
     && python -c "import torch; print('PyTorch:', torch.__version__)" \
