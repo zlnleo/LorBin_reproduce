@@ -1,7 +1,13 @@
-"""Summarize LorBin-paper quality thresholds from a CheckM2 quality_report.tsv.
+"""Optional Python CLI for LorBin-paper quality thresholds from an existing TSV.
 
 Usage: python summarize_checkm2.py PATH_TO_QUALITY_REPORT.tsv
 This reads an existing report; it does not run or install CheckM2.
+On Windows, summarize_checkm2.bat needs no Python and also creates Chinese
+quality_summary.txt plus bins_quality.tsv. This Python CLI only prints counts.
+Each TSV row is one bin. Completeness/Contamination are estimated percentages.
+HQ/hBin is completeness >=90 and contamination <=5. MQ is completeness >=50
+and contamination <10, excluding HQ. The mBin condition includes HQ: never
+add its count to HQ. These are two-number proxies, not full MIMAG HQ status.
 """
 
 from __future__ import annotations
@@ -43,9 +49,12 @@ def main() -> None:
     args = parser.parse_args()
     total, high, medium_condition, medium_only = summarize(args.quality_report)
     print(f"CheckM2 rows: {total}")
-    print(f"hBin (completeness >=90, contamination <=5): {high}")
+    print(f"HQ / hBin proxy (completeness >=90, contamination <=5): {high}")
     print(f"mBin condition (completeness >=50, contamination <10): {medium_condition}")
-    print(f"mBin excluding hBin (mutually exclusive): {medium_only}")
+    print(f"MQ excluding HQ (mutually exclusive): {medium_only}")
+    print(f"Other: {total - high - medium_only}")
+    print("HQ + MQ + Other = total. The mBin condition includes HQ; do not add HQ again.")
+    print("These CheckM2 estimates do not by themselves establish full MIMAG HQ or paper reproduction.")
     print("Keep the raw quality_report.tsv and CheckM2/database versions with these counts.")
 
 

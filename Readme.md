@@ -1,74 +1,82 @@
-# LorBin 手工复现
+# LorBin Docker 复现
 
-先读 [TUTORIAL.md](TUTORIAL.md)：按执行顺序解释输入、特征、ORF/marker、VAE、DBSCAN、BIRCH、输出和复现验收标准。
+本仓库提供 LorBin 的 Docker 构建配置、Windows 运行教程、源码阅读教程，以及 CheckM2 验证和结果汇总脚本。LorBin 的输入是 **contig FASTA 和排序 BAM**，最终分箱结果是 **bin FASTA**。
 
-原目录结构保持不变，只将运行与统计脚本集中到 `scripts/`：
+## 1. 为什么使用 Docker
 
-| 内容 | 位置 |
-|---|---|
-| 完整教程 | [TUTORIAL.md](TUTORIAL.md)，保留在外层 |
-| 本地源码与安装包 | [LorBin/](LorBin/) |
-| Docker 配置 | [docker-conda/Dockerfile](docker-conda/Dockerfile) |
-| 不用 conda 的候选方案 | [docker-light 评估与手动构建](docker-light/README.md)；尚未构建验收 |
-| 输入与独立结果 | `data/`、`runs/` |
-| 后台运行与状态查询 | [scripts/run_lorbin_background.bat](scripts/run_lorbin_background.bat)，配套 PS1 在同目录 |
-| CheckM2 独立质量评估 | [scripts/run_checkm2.bat](scripts/run_checkm2.bat)，配套 PS1 在同目录 |
-| 汇总 CheckM2 报告 | [scripts/summarize_checkm2.py](scripts/summarize_checkm2.py) |
-| 三个改进方向 | [improve 总览](../improve/README.md) |
+LorBin 官方支持和测试的是 Linux 环境，依赖 Python、PyTorch 和多个生信工具。Docker 让 Windows 用户通过命令行运行 Linux 环境，减少手工安装依赖和版本冲突，也便于记录、迁移实验环境。
 
-在 PowerShell 中检查输入与已保存结果：
+Docker 是本仓库采用的复现方式；已经有合适 Linux/WSL 环境的用户也可以按官方说明直接安装。Docker 能固定一部分环境，但不能替代输入、参数、版本和结果的核对。[官方 LorBin 仓库](https://github.com/LorMeBioAI/LorBin)
 
-```powershell
-Set-Location D:\project\article\LorBin\handreproduce
-.\scripts\run_lorbin_background.bat --check
-.\scripts\run_lorbin_background.bat --status
-.\scripts\run_lorbin_background.bat --logs
+## 2. 两种镜像构建方式
+
+准备 Docker，使用 Linux 容器模式。获取仓库后，进入包含 `LorBin/`、`docker-conda/` 和 `docker-light/` 的目录：
+
+```text
+git clone https://github.com/zlnleo/LorBin_reproduce.git
+cd LorBin_reproduce
 ```
 
-需要**新开一轮完整 300 epoch 计算**时，才执行：
+本机已有项目的用户直接进入 `handreproduce`，不用再次克隆。两种方式都从该目录构建，最后的 `.` 不能省略。
 
-```powershell
-.\scripts\run_lorbin_background.bat
+| 方式 | 文件 | 特点 | 镜像名称 |
+| --- | --- | --- | --- |
+| Conda | `docker-conda/Dockerfile` | 接近官方 conda 安装流程，便于对照学习 | `lorbin-hand:v2` |
+| Light | `docker-light/Dockerfile` | 系统 Python + pip，两阶段排除编译工具，减少环境冗余 | `lorbin-light` |
+
+### 方式一：Conda 构建
+
+```text
+docker build --platform linux/amd64 --progress=plain -f docker-conda/Dockerfile -t lorbin-hand:v2 .
 ```
 
-脚本从上一级项目目录寻找 `data/` 和 `runs/`。BAT 返回后，容器在后台继续计算；每次启动会创建新的运行目录，并更新 `runs/latest_run.json`。`--status` 和 `--logs` 读取这个指针，它代表**最近启动的一轮，不保证已经成功**。容器被清除后，`--status` 可检查磁盘产物并显示 `OUTPUTS_PRESENT`；此时退出码无法核实，不能将该状态当作 `SUCCEEDED`，`--logs` 会读取保存的 `LorBin.log`。
+### 方式二：Light 构建
 
-需要构建新镜像时，构建上下文仍是本目录：
-
-```powershell
-docker build -f .\docker-conda\Dockerfile -t lorbin-hand:rebuilt .
+```text
+docker build --platform linux/amd64 --progress=plain -f docker-light/Dockerfile -t lorbin-light .
 ```
 
-已核验退出码的 [9 月 28 日基线运行](runs/CRR451057_20260928_184541_337_29664/status.txt)完成 300 轮、退出码为 0，产生 **95 个候选 bin FASTA**。包括你 9 月 29 日的两次计算在内，四次运行的关键 CSV 与模型哈希一致。当前 `runs/latest_run.json` 指向 9 月 29 日 11:42 的运行，其容器已不存在，但磁盘产物通过结构检查。当前 Dockerfile 安装本地 `LorBin/dist/lorbin-0.1.0.tar.gz`；静态对照确认实际模块与 `setup.py` 和指定官方提交在统一换行符后相同，归档另有正常 CLI 不使用的旧备份文件。本机重复性不等于已获得官方同样本结果对照。归档哈希与比较范围见[教程开头](TUTORIAL.md)。
+两个 Dockerfile 都安装本仓库的 `LorBin/dist/lorbin-0.1.0.tar.gz`。镜像中不打包输入数据或运行结果；它们通过目录挂载提供。Light 的层级和参数解释见 [docker-light/README.md](docker-light/README.md)。
 
-对这次**已有的 95 个 bin**运行 CheckM2；下面命令只做质量评价，不会再次训练 LorBin：
+构建命令正常结束、退出码为 0 且日志完成镜像导出，才表示本次成功。Light 尚未完成本次构建和结果验收，不能把已有 Conda 运行记录当成 Light 的验证结果。APT 工具和数值库构建可能与 Conda 不同，比较结果时需要记录版本。
 
-```powershell
-Set-Location D:\project\article\LorBin\handreproduce
-.\scripts\run_checkm2.bat
+构建需要访问官方下载站点。配置没有绑定某台电脑的代理端口；VPN 是否接管 Docker 网络需要按本机设置确认。当前 CPU Torch 安装包适用于 Linux amd64；ARM 电脑需要 Docker 支持 amd64 模拟。
+
+## 3. 如何使用
+
+| 你要做什么 | 阅读位置 |
+| --- | --- |
+| 在 Windows 命令行启动、查看和保存 LorBin 结果 | [WINDOWS_DOCKER.md](WINDOWS_DOCKER.md) |
+| 了解每一步输入、输出和源码 | [TUTORIAL.md](TUTORIAL.md)：LorBin 复现与源码阅读教程 |
+| 使用 BAT 做 CheckM2 验证、统计 HQ/MQ、查看 TSV | [scripts/README.md](scripts/README.md) |
+| 理解 Light 的分层、下载和缓存清理 | [docker-light/README.md](docker-light/README.md) |
+
+先准备官方示例输入。下载入口见 [官方示例数据](https://zenodo.org/records/13883404)，解压后将对应文件放入：
+
+```text
+data/CRR451057.hifiasm.fna
+data/CRR451057.sorted.bam
 ```
 
-**CheckM2 默认选择固定路径，不会自动检测最新运行，也不读取 `latest_run.json`。** 不传参数时，它每次都读取已核验退出码的 `runs/CRR451057_20260928_184541_337_29664`。要评价另一轮，明确传入 `-RunDirectory`，该轮 `status.txt` 第一行必须是 `SUCCEEDED`；CheckM2 脚本本身不会刷新 LorBin 状态。
+后台 BAT 固定使用 `lorbin-hand:v2` 和这两份输入。构建 `lorbin-light` 不会自动切换 BAT；使用 Light 或其他输入时，可按 Windows 教程直接执行 Docker 命令。
 
-```powershell
-.\scripts\run_checkm2.bat -RunDirectory "D:\project\article\LorBin\handreproduce\runs\CRR451057_另一轮目录名"
-```
+## 4. 目录说明
 
-所选目录下的 `result/output_bins/*.fa` **每次调用都会重新扫描**，报告数量、名称及输入哈希按这次实际文件核对；95 仅是当前固定基线的数量。默认输出为 `<所选运行目录>/checkm2_reproduce/`，已存在时脚本停止；再次评价可指定新名字：
+| 位置 | 作用 |
+| --- | --- |
+| `LorBin/` | 官方版本对应的源码和本地安装归档；上游说明保留在 `LorBin/README.md` |
+| `docker-conda/`、`docker-light/` | 两种镜像构建配置 |
+| `scripts/` | 方便启动 LorBin、进行 CheckM2 验证和汇总结果的脚本 |
+| `data/` | 本机输入和 CheckM2 数据库，不随 Git 上传 |
+| `runs/<轮次>/result/` | 每次独立 LorBin 实验的输出 |
+| `runs/<轮次>/checkm2/origin/` | CheckM2 原始报告与产物 |
+| `runs/<轮次>/checkm2/summary/` | 中文统计、逐 bin 分类和来源记录 |
+| `output/` | **基于官方 LorBin 版本在本机运行得到的历史输出**；可能保留了多次运行的文件，作为历史参考 |
 
-```powershell
-.\scripts\run_checkm2.bat -RunDirectory "D:\project\article\LorBin\handreproduce\runs\CRR451057_20260928_184541_337_29664" -OutputName checkm2_reproduce_2
-```
+`output/` 是本地生成结果，并非作者发布的标准答案。新实验使用独立的 `runs/` 目录，避免与历史文件混用。数据、output 和 runs 已在 `.gitignore` 与根目录 `.dockerignore` 中排除；GitHub 上只有配置、源码和文档，克隆后不会自动得到本机历史输出。
 
-脚本使用独立的 `quay.io/biocontainers/checkm2:1.0.2--pyh7cba7a3_0` 容器、[DIAMOND 数据库 v2](https://doi.org/10.5281/zenodo.5571251)、4 线程和 `--lowmem`。运行前需下载 `data/checkm2-v2/checkm2_database.tar.gz`；[教程第 7 步](TUTORIAL.md#7-checkm2-独立质量评估)给出精确地址、大小和 MD5，也提供**手动读取最新指针、刷新状态并确认成功**的示例。脚本会核验并自动解压数据库，先运行 CheckM2 内置测试，再评价 bin。最终在所选运行的输出目录查看 `quality_report.tsv`（逐 bin 评分）、`quality_summary.txt`（质量数量汇总）、日志和 `provenance.json`。不加参数时的完整报告路径是 `runs/CRR451057_20260928_184541_337_29664/checkm2_reproduce/quality_report.tsv`；使用 `-OutputName` 后则换成该名字对应的目录。
+## 5. 怎样理解“复现完成”
 
-先前中断的会话在同次运行的 `checkm2/quality_report.tsv` 留有一份原始报告，CheckM2 自身日志显示预测完成，但后续汇总与溯源文件未生成；脚本为你的重跑使用新的 `checkm2_reproduce/` 目录，保留旧报告。**当前具备示例流程跑通与本机重复性的证据；新的 CheckM2 复现结果须等你运行 BAT 并核对报告后才能确认。** 官方 demo 未给出这个单样本的标准质量报告，因此没有“至少 N 个合格 bin”的公开通过线。单样本质量结果可作为三个改进方向的基线；论文总体性能仍需相同跨样本评测。解释见[教程：怎样和官方结果比较](TUTORIAL.md#怎样和官方结果比较)。
+构建成功代表环境装好；完整运行代表流程跑通；CheckM2 完成代表获得 bin 质量估计。这三件事需要分别验证。文件总数不能代替高质量 MAG 数量，也不能直接证明论文整体性能。
 
-不用 conda 的 `docker-light` 方案可行，候选文件与风险评估位于 [docker-light/README.md](docker-light/README.md)。候选使用 Ubuntu 22.04、系统 Python 3.10、pip CPU Torch 1.11.0 与多阶段构建，尚未构建或验收。由你手动执行：
-
-```powershell
-Set-Location D:\project\article\LorBin\handreproduce
-docker build --platform linux/amd64 --progress=plain -f .\docker-light\Dockerfile -t docker-light:trial .
-```
-
-构建后再检验安装、短流程和同输入对照。原后台 BAT 固定使用 `lorbin-hand:v2`，不会自动切换到新镜像；更小的体积也不能代替功能与结果检验。
+当前保留的 Conda 单样本运行记录包含 95 个候选 bin，已有 CheckM2 汇总为 HQ 5、互斥 MQ 4、Other 86。这是本机记录，不是官方规定的通过门槛。验收层次、对应源码和官方比较方法见 [TUTORIAL.md](TUTORIAL.md)。

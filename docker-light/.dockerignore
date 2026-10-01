@@ -1,0 +1,10 @@
+# 只把构建所需文件发送给 Docker；不把数据和运行结果打进镜像。
+# 此文件专用于 docker-light/Dockerfile，优先于根目录的 .dockerignore。
+**
+!docker-light/
+!docker-light/Dockerfile
+!docker-light/Dockerfile.dockerignore
+!docker-light/requirements.txt
+!LorBin/
+!LorBin/dist/
+!LorBin/dist/lorbin-0.1.0.tar.gz
